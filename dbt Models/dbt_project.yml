@@ -1,0 +1,121 @@
+# =============================================================================
+# Motiv Alliance Intelligence Platform — dbt Project Configuration
+# =============================================================================
+#
+# Version:        v0.1 (Phase 0 Sprint A skeleton)
+# Inherits:       Pre-Launch Memo May 2 §4.1 (multi-tenant), FQHC Schema Memo
+# Target:         Supabase Postgres (Phase 0); managed Postgres from Stage 2
+#
+# DESIGN PRINCIPLES
+# -----------------
+# 1. Multi-tenant from day one. Every model is filterable by platform_family.
+#    Cross-platform models live under shared/; vertical-specific under
+#    hospital/, fqhc/, nonprofit/.
+#
+# 2. Three-layer architecture:
+#      staging      — 1:1 with source, light type-casting, source documentation
+#      intermediate — joins, derived columns, business logic
+#      marts        — final analytic surfaces consumed by the application
+#
+# 3. Enrichment models live in their own folder (models/enrichment/).
+#    Each enrichment is one model with versioned logic and explicit tests.
+#
+# 4. Materialization defaults: views in staging (cheap, always fresh),
+#    tables in intermediate (faster joins), tables or incremental in marts.
+#
+# 5. Tests are mandatory for every public-facing column. The Charter §6 gate
+#    criteria reference dbt test pass rates.
+# =============================================================================
+
+name: motiv_alliance
+version: '0.1.0'
+config-version: 2
+
+profile: motiv_alliance
+
+# --- Path configuration ------------------------------------------------------
+
+model-paths:    ["models"]
+analysis-paths: ["analyses"]
+test-paths:     ["tests"]
+seed-paths:     ["seeds"]
+macro-paths:    ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# --- Variables (referenced by macros and models) -----------------------------
+
+vars:
+  # The current Phase 0 cohort scope — used by staging filters
+  current_geography_filter: 'IL'
+
+  # Enrichment versioning — increment when methodology changes
+  enrichment_version: 'v1.0'
+
+  # Provenance actor name written by dbt-driven inserts
+  dbt_actor: 'pipeline:dbt'
+
+  # Cohort size threshold — peer cohorts smaller than this are flagged
+  min_peer_cohort_size: 5
+
+# --- Models configuration ----------------------------------------------------
+
+models:
+  motiv_alliance:
+
+    # All models default to view materialization unless overridden below
+    +materialized: view
+    +on_schema_change: append_new_columns
+
+    # ---- Staging layer ----
+    staging:
+      +materialized: view
+      +schema: staging
+      shared:
+        +tags: ['staging', 'shared']
+      hospital:
+        +tags: ['staging', 'hospital']
+      fqhc:
+        +tags: ['staging', 'fqhc']
+      nonprofit:
+        +tags: ['staging', 'nonprofit']
+
+    # ---- Intermediate layer ----
+    intermediate:
+      +materialized: table
+      +schema: intermediate
+      shared:
+        +tags: ['intermediate', 'shared']
+      hospital:
+        +tags: ['intermediate', 'hospital']
+
+    # ---- Marts layer ----
+    marts:
+      +materialized: table
+      +schema: marts
+      shared:
+        +tags: ['marts', 'shared']
+      hospital:
+        +tags: ['marts', 'hospital']
+        +schema: marts_hospital
+      fqhc:
+        +tags: ['marts', 'fqhc']
+        +schema: marts_fqhc
+      nonprofit:
+        +tags: ['marts', 'nonprofit']
+        +schema: marts_nonprofit
+
+    # ---- Enrichment layer (the 22+ enrichments) ----
+    enrichment:
+      +materialized: table
+      +schema: enrichment
+      +tags: ['enrichment']
+
+# --- Test configuration ------------------------------------------------------
+
+tests:
+  +store_failures: true
+  +schema: dbt_test_failures

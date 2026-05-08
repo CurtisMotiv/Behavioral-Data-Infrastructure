@@ -1,0 +1,10 @@
+# =============================================================================
+# dbt package dependencies
+# =============================================================================
+# Run `dbt deps` after cloning to install.
+# =============================================================================
+
+packages:
+  # dbt-utils — generic tests, macros for cross-DB SQL helpers
+  - package: dbt-labs/dbt_utils
+    version: [">=1.1.0", "<2.0.0"]
