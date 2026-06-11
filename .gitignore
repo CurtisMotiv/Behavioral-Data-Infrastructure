@@ -1,0 +1,20 @@
+# Ignore data files
+*.csv
+*.xlsx
+
+# Ignore text files in the Extraction folder
+Extraction/*.txt
+
+# dbt build and logs
+dbt Models/target/
+dbt Models/logs/
+dbt models/target/
+dbt models/logs/
+
+# Python cache folders
+__pycache__/
+**/__pycache__/
+
+# Environment and local config
+.env
+profiles.yml
