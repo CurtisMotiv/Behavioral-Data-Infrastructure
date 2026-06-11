@@ -91,6 +91,8 @@ models:
         +tags: ['intermediate', 'shared']
       hospital:
         +tags: ['intermediate', 'hospital']
+      fqhc:
+        +tags: ['intermediate', 'fqhc']
 
     # ---- Marts layer ----
     marts:

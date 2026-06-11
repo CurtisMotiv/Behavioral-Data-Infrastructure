@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: mart_fqhc_intelligence
+    description: "Denormalized mart for FQHC dashboards combining profile, retirement, and plan health."
+    columns:
+      - name: site_name
+        description: "Site name (primary identifier)"
+        tests:
+          - not_null
+      - name: state
+        description: "Two-letter state code"
+        tests:
+          - not_null

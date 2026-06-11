@@ -1,0 +1,18 @@
+version: 2
+
+models:
+  - name: e01_plan_health_grade
+    description: "Enrichment: scores organizational health for FQHCs using cohort and type signals from `int_fqhc_profile`."
+    columns:
+      - name: plan_health_grade_score
+        description: "Numeric score (0-100) summarizing plan health components."
+        tests:
+          - not_null
+      - name: plan_health_grade
+        description: "Letter grade (A-D) derived from `plan_health_grade_score`."
+        tests:
+          - not_null
+      - name: peer_cohort_size
+        description: "Peer cohort size inherited from `int_fqhc_profile`."
+      - name: health_center_type
+        description: "Original health center type from source used in scoring."
