@@ -15,6 +15,7 @@ SUPABASE_PASSWORD = '805Milwaukee541'
 SUPABASE_PORT = 5432
 
 PROPUBLICA_SEARCH_URL = 'https://projects.propublica.org/nonprofits/api/v2/search.json'
+PROPUBLICA_ORG_URL = 'https://projects.propublica.org/nonprofits/api/v2/organizations/{ein}.json'
 PROGRESS_FILE = os.path.join(os.path.dirname(__file__), 'extraction_progress.txt')
 
 RAW_SITES_TABLE = 'raw_hrsa_sites'
@@ -107,23 +108,83 @@ def search_propublica(name, state):
     return response.json()
 
 
+def fetch_propublica_org_details(ein):
+    if not ein:
+        return None
+    url = PROPUBLICA_ORG_URL.format(ein=urllib.parse.quote(str(ein)))
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        return data.get('organization') or data
+    except Exception:
+        return None
+
+
 def normalize_ein(ein):
     if ein is None:
         return None
     return str(ein).strip()
 
 
+def is_health_org(org_data):
+    """Return True if the organization appears healthcare-related.
+
+    Criteria:
+    - NTEE code starts with E or F (health categories), OR
+    - Organization name contains healthcare-related keywords,
+    - Exclude obvious non-health organizations (sports teams, lodges, jaycees, development corporations).
+    """
+    if not org_data:
+        return False
+
+    ntee = org_data.get('ntee_code') or ''
+    if isinstance(ntee, str) and ntee.strip():
+        if ntee.strip()[0].upper() in ('E', 'F'):
+            return True
+
+    name = (org_data.get('name') or '')
+    lower_name = name.lower()
+
+    inclusion_keywords = [
+        'health', 'medical', 'clinic', 'community health', 'fqhc',
+        'primary care', 'family health', 'wellness'
+    ]
+    exclusion_keywords = [
+        'sports', ' team', 'lodge', 'jaycee', 'jaycees', 'development corporation'
+    ]
+
+    if any(excl in lower_name for excl in exclusion_keywords):
+        return False
+
+    if any(keyword in lower_name for keyword in inclusion_keywords):
+        return True
+
+    return False
+
+
 def extract_org_rows(search_response):
     organizations = search_response.get('organizations', [])
     for org in organizations:
+        ein = normalize_ein(org.get('ein'))
+        org_data = org
+        if ein:
+            details = fetch_propublica_org_details(ein)
+            if details:
+                org_data = details
+
+        # Filter to healthcare-related organizations only
+        if not is_health_org(org_data):
+            continue
+
         yield {
-            'name': org.get('name'),
-            'ein': normalize_ein(org.get('ein')),
-            'asset_amount': org.get('asset_amount'),
-            'income_amount': org.get('income_amount'),
-            'revenue_amount': org.get('revenue_amount'),
-            'ntee_code': org.get('ntee_code'),
-            'raw_json': json.dumps(org),
+            'name': org_data.get('name') or org.get('name'),
+            'ein': ein,
+            'asset_amount': org_data.get('asset_amount'),
+            'income_amount': org_data.get('income_amount'),
+            'revenue_amount': org_data.get('revenue_amount'),
+            'ntee_code': org_data.get('ntee_code'),
+            'raw_json': json.dumps(org_data),
         }
 
 
@@ -133,23 +194,13 @@ def insert_rows(conn, rows):
 
     conn = ensure_connection(conn)
     unique_rows = []
-    eins = [normalize_ein(row.get('ein')) for row in rows if row.get('ein') is not None]
-    if not eins:
-        return 0
-
-    with conn.cursor() as cur:
-        cur.execute(f'''
-            select ein
-            from {RAW_990_TABLE}
-            where ein = any(%s)
-        ''', (eins,))
-        existing_eins = {normalize_ein(row[0]) for row in cur.fetchall()}
+    seen_eins = set()
 
     for row in rows:
         ein = normalize_ein(row.get('ein'))
-        if not ein or ein in existing_eins:
+        if not ein or ein in seen_eins:
             continue
-        existing_eins.add(ein)
+        seen_eins.add(ein)
         unique_rows.append(row)
 
     if not unique_rows:
@@ -158,6 +209,12 @@ def insert_rows(conn, rows):
     insert_sql = f'''
         INSERT INTO {RAW_990_TABLE} (name, ein, asset_amount, income_amount, revenue_amount, ntee_code, raw_json)
         VALUES %s
+        ON CONFLICT (ein) DO UPDATE SET
+            asset_amount = EXCLUDED.asset_amount,
+            income_amount = EXCLUDED.income_amount,
+            revenue_amount = EXCLUDED.revenue_amount,
+            ntee_code = EXCLUDED.ntee_code,
+            raw_json = EXCLUDED.raw_json
     '''
     execute_values(
         conn.cursor(),
